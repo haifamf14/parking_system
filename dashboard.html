@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Parking System Dashboard</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet"/>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+
+    <link rel="stylesheet" href="dashboard.css" />
+</head>
+<body>
+    <div class="wrap">
+        <div class="topbar">
+            <div>
+                <div class="title">Parking System Dashboard</div>
+                <div class="meta" id="now">—</div>
+            </div>
+            <div class="top-actions">
+                <button class="toggle" id="themeToggle">🌙 Dark / Light</button>
+            </div>
+        </div>
+
+        <div class="grid">
+            <section class="card live-status">
+                <h2>Live Parking Status</h2>
+                <div class="kpis">
+                    <div class="kpi"><div class="label">Total Slots</div><div class="value" id="totalSlots">8</div></div>
+                    <div class="kpi"><div class="label">Occupied</div><div class="value" id="occupied">0</div></div>
+                    <div class="kpi"><div class="label">Available</div><div class="value" id="available">8</div></div>
+                </div>
+                <div style="margin-top:10px" class="chips">
+                    <div class="chip" id="peak">Peak Today: 0%</div>
+                    <div class="chip" id="turnover">Avg Duration: 0.00h</div>
+                </div>
+                <div class="rates">
+                    <strong>Parking Rates</strong>
+                    <ul style="margin:6px 0 0 16px">
+                        <li>First 2 hours: <strong>Free</strong></li>
+                        <li>RM 1 setiap jam seterusnya (hourly, rounded up)</li>
+                        <li>RM 23 selepas 6 jam (flat)</li>
+                        <li>RM 30 premium package (flat override)</li>
+                        <li>Penalty: RM 50 (buka kunci tayar)</li>
+                    </ul>
+                </div>
+            </section>
+
+            <section class="card alerts">
+                <h2>Alerts & Notifications</h2>
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div class="small">Recent alerts</div>
+                    <button class="action-btn" id="clearAlerts">Clear</button>
+                </div>
+                <div class="alert-list" id="alertList"></div>
+            </section>
+
+            <section class="card vehicle-activity">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+                    <h2>Vehicle Activity</h2>
+                    <div class="inline-form">
+                        <label class="small">Plate No:</label>
+                        <input id="plateInput" class="input" type="text" placeholder="ABC1234" />
+
+                        <label class="small">Contact type:</label>
+                        <select id="contactType" class="select">
+                            <option value="email" selected>Email</option>
+                            <option value="phone">Phone</option>
+                        </select>
+                        <input id="contactInput" class="input" type="email" placeholder="name@example.com" />
+                        <button class="action-btn" id="openGate">Add Entry</button>
+                        <button class="action-btn" id="closeGate">Checkout Random</button>
+                        <button class="action-btn" id="resetSystem">Reset</button>
+                        <!-- Removed Toggle Mock button -->
+                    </div>
+                </div>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Parking Slot</th>
+                                <th>Plate No</th>
+                                <th>Contact</th>
+                                <th>Entry Time</th>
+                                <th>Exit Time</th>
+                                <th>Duration (hrs)</th>
+                                <th>RM</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="activityBody"></tbody>
+                    </table>
+                </div>
+                <div class="small" style="margin-top:8px;">
+                    Fill Plate No and <strong>either Email or Phone</strong> using the selector above. The table header sticks while you scroll.
+                </div>
+            </section>
+
+            <section class="card trends">
+                <h2>Trends</h2>
+                <canvas id="trendsChart"></canvas>
+            </section>
+
+            <section class="card reports">
+                <h2>Reports</h2>
+                <canvas id="reportsChart"></canvas>
+            </section>
+
+            <section class="card controls">
+                <h2>Controls</h2>
+                <div class="btns">
+                    <button class="btn" id="ackAlerts">Acknowledge All Alerts</button>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">Action done</div>
+
+    <script src="dashboard.js"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-messaging-compat.js"></script>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "project-id.firebaseapp.com",
+            projectId: "project-id",
+            storageBucket: "project-id.appspot.com",
+            messagingSenderId: "922158977601",
+            appId: "YOUR_APP_ID"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const messaging = firebase.messaging();
+
+        async function registerAndGetToken() {
+            try {
+                const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') {
+                    console.log('Notification permission not granted');
+                    return;
+                }
+
+                const vapidKey = 'YOUR_VAPID_PUBLIC_KEY_HERE';
+                const currentToken = await messaging.getToken({ vapidKey, serviceWorkerRegistration: registration });
+                if (currentToken) {
+                    console.log('FCM token:', currentToken);
+                    await fetch('save_token.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token: currentToken })
+                    });
+                    console.log('Token sent to server');
+                } else {
+                    console.log('No registration token available.');
+                }
+            } catch (err) {
+                console.error('Error getting permission or token', err);
+            }
+        }
+
+        messaging.onMessage(function(payload) {
+            console.log('Message received. ', payload);
+            alert((payload.notification?.title || '') + '\n' + (payload.notification?.body || ''));
+        });
+
+        if ('serviceWorker' in navigator && 'Notification' in window) {
+            registerAndGetToken();
+        } else {
+            console.log('Service Worker or Notifications not supported in this browser.');
+        }
+    </script>
+
+</body>
+</html>
